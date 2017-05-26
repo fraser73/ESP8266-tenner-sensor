@@ -1,1 +1,1 @@
-# ESP8266 tenner sensor
+# ESP8266 Tenner Sensor
