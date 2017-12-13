@@ -1,7 +1,6 @@
 # ESP8266 Tenner Sensor
 
-
-Arduino code for a multi use sensor, which repots in MQTT based on the ESP8266 chip. Intended to cost less than a £10.
+Arduino code for a multi use sensor, which repots in MQTT based on the ESP8266 chip. Intended to cost less than a Â£10.
 
 Details:
 Tested on Arduino IDE 1.6.5 and ESP01+ESP12 ESP8266 modules
