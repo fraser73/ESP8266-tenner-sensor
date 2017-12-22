@@ -1,6 +1,7 @@
 # ESP8266 Tenner Sensor
 
-Arduino code for a multi use sensor, which repots in MQTT based on the ESP8266 chip. Intended to cost less than a £10.
+
+Arduino code for a multi use sensor, which repots in MQTT based on the ESP8266 chip. Intended to cost less than a �10.
 
 Details:
 Tested on Arduino IDE 1.6.5 and ESP01+ESP12 ESP8266 modules
@@ -16,12 +17,13 @@ Ability to switch off sensor when not in use (not really needed for a DSB1820, b
 Super-power save for modules where the reset line is broken out
 Ability to switch a number of Neopixel RGB LEDs under control of MQTT message (format message as: "RRR GGG BBB ttt" (no "s) where R G and B are 000-255 with leading zeros and ttt is ms between each LED's update)
 Ability to read pulses from a gas meter and report as MQTT
+Reboots microcontroller once a day in case of memory leaks
 
 To Do:
 "mqtt log" flag and code up logging to mqtt for off-serial hook up
 See if a DSB1820 can be run from parasite power using the internal pullup IO lines.
 Basic API to allow different neo-pixel effects (strobe, rainbow, whoosh, etc)
-
+When configured to be powered on permanently detect MQTT broker disconnect and attempt to reconnect
 
 
 Gotchas:
