@@ -13,14 +13,14 @@
 #include <Adafruit_NeoPixel.h>
 
 // Variables to be set for each different device
-// NB: You can't use Gas loggin and neo Pixels on an ESP01 module as there aren't enough IO lines
+// NB: You can't use Gas logging and neo Pixels on an ESP01 module as there aren't enough IO lines
 const char* ssid = "SSID GOES HERE";
-const char* password = "PASSWORD GOES HERE!"; 
+const char* password = "SSID PASSWORD GOES HERE"; 
 const bool diags = TRUE; // Energy saving in the battery version of the temperature sensor is critical, so serial port operations can be turned off
-const bool superPowerSave = TRUE; // Enable to put into deep sleep mode
+const bool superPowerSave = FALSE; // Enable to put into deep sleep mode
 const int superPowerSaveDuration = 600; // Seconds to remain in power save mode before restarting
 const bool temperatureLogging = TRUE; // Set TRUE/FALSE for tempearture logging / no logging
-const bool gasLogging = FALSE; // Set TRUE/FALSE for gas pulse logging
+const bool gasLogging = TRUE; // Set TRUE/FALSE for gas pulse logging
 const bool neoPixels = FALSE; //  Set TRUE/FALSE for neoPixel lights
 const int numberOfNeoPixels = 5; // The number of neoPixels we're controlling
 // On an ESP-01 module, the 2nd pin from the left on the top row is 2, the 3rd is 0
@@ -28,7 +28,8 @@ const int neoPixelPin = 2; // Device pin the nexPixel strip is connected to
 const int gasPin = 2; // The pin the gas pulse is detected on (it'll be the same as the neoPixel PIN, if you're using a esp-01)
 const int ONE_WIRE_BUS = 0; // The pin to which the temperature sensor is connected
 const int tempSensorPowerPin = 4; // The pin the power supply of the temperature sensor is connected to
-const bool isTempSensorOnPin = TRUE; // true if the temperature sensor isn't hard wired to Vcc
+const bool isTempSensorOnPin = FALSE; // true if the temperature sensor isn't hard wired to Vcc
+const int maxWiFiTries = 30; // Maximum wait (in seconds) for WiFi to connect, before resetting to try again
 String subscribeTopic = "/devices/"; // subscribe to this topic; anything sent here will be passed into the messageReceived function (will have MAC address and "command" appended
 String temperatureTopic = "/devices/"; //topic to publish temperatures readings to, will have MAC address and "temperature" appended
 String gasTopic = "/devices/"; //topic to publish gas readings to, will have MAC address and "gas" appended
@@ -108,9 +109,19 @@ void setup() {
 
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
+  int loopCounter=0;
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
+    delay(1000);
     if (diags) {Serial.print(".");}
+    loopCounter++;
+    if (loopCounter>=maxWiFiTries) {
+      if (diags) {Serial.println ("");
+                  Serial.print ("WiFi not connected after ");
+                  Serial.print (maxWiFiTries);
+                  Serial.println (" seconds");
+                  }
+      restartESP();
+    }
   }
 
   if (diags) {
@@ -156,7 +167,7 @@ void setup() {
       Serial.println("MQTT connect failed");
       Serial.println("Will reset and try again...");
     }
-    abort();
+    restartESP();
   }
 
   prevTime = 0;
@@ -194,6 +205,7 @@ void loop() {
     client.publish(temperatureTopic, temperatureString);
   }
   }
+  
   //Free up some time for background tasks of the ESP8266
   client.loop();
 
@@ -216,20 +228,14 @@ void loop() {
     }
   }
 
-  //Free up some time for background tasks of the ESP8266
-  client.loop();
+// End of all logging and NeoPixels etc, on to housekeeping
 
-  // reset after a day to avoid memory leaks 
-  if(millis()>resetPeriod){
-    ESP.restart();
-  }
-  
+// Go into power save before checking other reboot type functions, so we don't end up
+// in a loop burning battery, if we don't need to
   if (superPowerSave && temperatureLogging && !neoPixels && !gasLogging) {
   // If we're only logging temperature and super-power-save is enabled
   // hibernate the ESP8266 and restart when next log needs to be made
   
-  // Insert code here to go into deep sleep, and restart   
-
   if (diags) {
     Serial.println ("Going into hibernation...");
     }
@@ -238,8 +244,26 @@ void loop() {
                    Serial.println (tempSensorPowerPin);}
       digitalWrite(tempSensorPowerPin, LOW);
     }
-  ESP.deepSleep(superPowerSaveDuration*1000000, WAKE_RF_DEFAULT); // Sleep for 60 seconds
+  ESP.deepSleep(superPowerSaveDuration*1000000, WAKE_RF_DEFAULT); // Sleep for superPowerSaveDuration seconds
   }
+
+//Free up some time for background tasks of the ESP8266
+  client.loop();
+
+// reset after a day to avoid memory leaks 
+  if(millis()>resetPeriod){
+    if (diags) {Serial.println ("Restarting after reset period reached");}
+    restartESP();
+  }
+
+// If we're not connected to the MQTT broker any more, restart to reconnect networking
+  if(!client.connected()){
+    if (diags) {Serial.println ("No longer connected to MQTT broker, restarting");}
+    restartESP();
+  }
+
+
+  
 }
 
 /*
@@ -342,4 +366,31 @@ String macToStr(const uint8_t* mac)
   }
   return result;
 }
+
+
+// Fill the dots one after the other with a color
+void restartESP() {
+  // Test to see if the ESP will reboot into "flash mode" for programming, if so it stays there, effectively dead until manually reset
+  // Flash mode is hardware GPIO0=LOW
+  // Loop round this until GPIO0=HIGH, as booting low results in non-functioning device
+
+  if (diags) {Serial.print ("Waiting for program pin (GPIO0) to go high, for safe reboot.");}
+
+  pinMode (0, INPUT_PULLUP);  // Explicitly define the pin as input, with pullup to high, in case it's used as an output elsewhere
+  while (!digitalRead(0)) {
+    delay (1000);
+    if (diags) {Serial.print (".");}
+  }
+  
+  if (diags) {
+    Serial.println("");
+    Serial.println("");
+    Serial.println("Restarting...");
+    Serial.println("");
+    Serial.println("");
+  }
+  
+  ESP.restart(); // Call the platform specific restart function for the ESP8266
+}
+
 

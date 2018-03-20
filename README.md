@@ -18,12 +18,13 @@ Super-power save for modules where the reset line is broken out
 Ability to switch a number of Neopixel RGB LEDs under control of MQTT message (format message as: "RRR GGG BBB ttt" (no "s) where R G and B are 000-255 with leading zeros and ttt is ms between each LED's update)
 Ability to read pulses from a gas meter and report as MQTT
 Reboots microcontroller once a day in case of memory leaks
+Reboot of microcontroller if MQTT connection is lost or if WiFi doesn't connection
+Reboot routine tests to see if the GPIO0 is low, won't reboot until it's high, as this is the program flash line and will result in booting to program mode and non-operational controller
 
 To Do:
 "mqtt log" flag and code up logging to mqtt for off-serial hook up
 See if a DSB1820 can be run from parasite power using the internal pullup IO lines.
 Basic API to allow different neo-pixel effects (strobe, rainbow, whoosh, etc)
-When configured to be powered on permanently detect MQTT broker disconnect and attempt to reconnect
 
 
 Gotchas:
