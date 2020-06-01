@@ -15,20 +15,20 @@
 // Variables to be set for each different device
 // NB: You can't use Gas logging and neo Pixels on an ESP01 module as there aren't enough IO lines
 const char* ssid = "SSID GOES HERE";
-const char* password = "SSID PASSWORD GOES HERE"; 
-const bool diags = TRUE; // Energy saving in the battery version of the temperature sensor is critical, so serial port operations can be turned off
-const bool superPowerSave = FALSE; // Enable to put into deep sleep mode
+const char* password = "PASSWORD GOES HERE"; 
+const bool diags = true; // Energy saving in the battery version of the temperature sensor is critical, so serial port operations can be turned off
+const bool superPowerSave = true; // Enable to put into deep sleep mode
 const int superPowerSaveDuration = 600; // Seconds to remain in power save mode before restarting
-const bool temperatureLogging = TRUE; // Set TRUE/FALSE for tempearture logging / no logging
-const bool gasLogging = TRUE; // Set TRUE/FALSE for gas pulse logging
-const bool neoPixels = FALSE; //  Set TRUE/FALSE for neoPixel lights
+const bool temperatureLogging = true; // Set true/false for tempearture logging / no logging
+const bool gasLogging = false; // Set true/false for gas pulse logging
+const bool neoPixels = false; //  Set true/false for neoPixel lights
 const int numberOfNeoPixels = 5; // The number of neoPixels we're controlling
 // On an ESP-01 module, the 2nd pin from the left on the top row is 2, the 3rd is 0
 const int neoPixelPin = 2; // Device pin the nexPixel strip is connected to
 const int gasPin = 2; // The pin the gas pulse is detected on (it'll be the same as the neoPixel PIN, if you're using a esp-01)
 const int ONE_WIRE_BUS = 0; // The pin to which the temperature sensor is connected
 const int tempSensorPowerPin = 4; // The pin the power supply of the temperature sensor is connected to
-const bool isTempSensorOnPin = FALSE; // true if the temperature sensor isn't hard wired to Vcc
+const bool isTempSensorOnPin = false; // true if the temperature sensor isn't hard wired to Vcc
 const int maxWiFiTries = 30; // Maximum wait (in seconds) for WiFi to connect, before resetting to try again
 String subscribeTopic = "/devices/"; // subscribe to this topic; anything sent here will be passed into the messageReceived function (will have MAC address and "command" appended
 String temperatureTopic = "/devices/"; //topic to publish temperatures readings to, will have MAC address and "temperature" appended
@@ -41,8 +41,8 @@ unsigned long prevTime;
 
 
 // Further vars
-bool gasLogLast = FALSE;
-bool gasLogCurrent = FALSE;
+bool gasLogLast = false;
+bool gasLogCurrent = false;
 
 
 // If using Neo Pixels, make sure the next non-comment line is correctly setup (it should be!)
@@ -221,7 +221,7 @@ void loop() {
       // Report only HIGH going LOW (ie: sensor becoming activated)
       // If reporting whenever a state change, we'll report twice as 
       // many gas pulses as required.
-      if (gasLogCurrent==FALSE){      
+      if (gasLogCurrent==false){      
         client.publish(gasTopic, "Gas Pulse!");
         if (diags) {Serial.println ("Logging gas pulse.");}
       }
