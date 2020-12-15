@@ -1,43 +1,27 @@
 
 /*
- * £10 Temperature sensor, by Fraser MacIntosh 
- * Initially based on https://gist.github.com/anonymous/8d5b19fa4cab521b6690
+ * £10 MQTT multi-sensor, by Fraser MacIntosh
+ * Initially intended to be a cheap temperature sensor using the ESP8266, it is now
+ * a configurable multi sensor and controller, for a minimal price point - you should still
+ * be able to get a temperature sensor working for approx £10.
+ * 
+ * Git: https://github.com/fraser73/ESP8266-tenner-sensor
+ * 
+ * Initial code based on https://gist.github.com/anonymous/8d5b19fa4cab521b6690
  * By James Bruce, 2015
  */
 
+//Include Libraries
+#include <FS.h>                 // ESP8266 Filesystem FS.h library
+#include <MQTTClient.h>         // IDE MQTT library
+#include <ArduinoJson.h>        // ArduinoJson v6 library (not the Arduino_JSON which seems to have been abandoned)
+#include <ESP8266WiFi.h>        // 
+#include <OneWire.h>            // 
+#include <DallasTemperature.h>  // DallasTemperature Library for the DS18B20
+#include <Adafruit_NeoPixel.h>  // 
 
-#include <MQTTClient.h>
-#include <ESP8266WiFi.h>
-#include <OneWire.h>
-#include <DallasTemperature.h>
-#include <Adafruit_NeoPixel.h>
-
-// Variables to be set for each different device
-// NB: You can't use Gas logging and neo Pixels on an ESP01 module as there aren't enough IO lines
-const char* ssid = "SSID GOES HERE";
-const char* password = "PASSWORD GOES HERE"; 
-const bool diags = true; // Energy saving in the battery version of the temperature sensor is critical, so serial port operations can be turned off
-const bool superPowerSave = true; // Enable to put into deep sleep mode
-const int superPowerSaveDuration = 600; // Seconds to remain in power save mode before restarting
-const bool temperatureLogging = true; // Set true/false for tempearture logging / no logging
-const bool gasLogging = false; // Set true/false for gas pulse logging
-const bool neoPixels = false; //  Set true/false for neoPixel lights
-const int numberOfNeoPixels = 5; // The number of neoPixels we're controlling
-// On an ESP-01 module, the 2nd pin from the left on the top row is 2, the 3rd is 0
-const int neoPixelPin = 2; // Device pin the nexPixel strip is connected to
-const int gasPin = 2; // The pin the gas pulse is detected on (it'll be the same as the neoPixel PIN, if you're using a esp-01)
-const int ONE_WIRE_BUS = 0; // The pin to which the temperature sensor is connected
-const int tempSensorPowerPin = 4; // The pin the power supply of the temperature sensor is connected to
-const bool isTempSensorOnPin = false; // true if the temperature sensor isn't hard wired to Vcc
-const int maxWiFiTries = 30; // Maximum wait (in seconds) for WiFi to connect, before resetting to try again
-String subscribeTopic = "/devices/"; // subscribe to this topic; anything sent here will be passed into the messageReceived function (will have MAC address and "command" appended
-String temperatureTopic = "/devices/"; //topic to publish temperatures readings to, will have MAC address and "temperature" appended
-String gasTopic = "/devices/"; //topic to publish gas readings to, will have MAC address and "gas" appended
-const char* server = "10.1.10.23"; // server or URL of MQTT broker
-String clientName = "ESP8266-"; // just a name used to talk to MQTT broker, MAC will be appended for uniqueness
-long interval = 60000; //(ms) - 60 seconds between reports
-unsigned long resetPeriod = 86400000; // 1 day - this is the period after which we restart the CPU, to deal with odd memory leak errors
-unsigned long prevTime;
+//Include the Configration files - make sure you update this before compilation!
+#include "configuration.h"
 
 
 // Further vars
@@ -77,6 +61,25 @@ void setup() {
     if (neoPixels) { Serial.println ("Neopixels enabled"); }
     
     }
+
+// ////////////// experimental section will need tidying up...
+
+// mount the SPIFFS filesystem
+// bool success = SPIFFS.begin();
+ 
+//  if(SPIFFS.begin()){
+//    Serial.println("File system mounted with success");  
+//  }else{
+ //   Serial.println("Error mounting the file system");  
+//  }
+
+//write a file
+
+
+// read a file
+
+
+// ///////////////////////////
 
   if (temperatureLogging) {
     // Switch on temperature sensor, if it's on an IO pin
@@ -201,6 +204,8 @@ void loop() {
       Serial.print("Temperature obtained as: ");
       Serial.print(temperatureString);
       Serial.println ("C");
+      Serial.println ("Publishing to MQTT broker at "+temperatureTopic);
+      Serial.println();
     }
     client.publish(temperatureTopic, temperatureString);
   }
@@ -392,5 +397,3 @@ void restartESP() {
   
   ESP.restart(); // Call the platform specific restart function for the ESP8266
 }
-
-
