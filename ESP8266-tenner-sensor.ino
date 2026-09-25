@@ -7,27 +7,33 @@
  * 
  * Git: https://github.com/fraser73/ESP8266-tenner-sensor
  * 
- * Initial code based on https://gist.github.com/anonymous/8d5b19fa4cab521b6690
+ * Initial MQTT code based on https://gist.github.com/anonymous/8d5b19fa4cab521b6690
  * By James Bruce, 2015
  */
 
 //Include Libraries
-#include <FS.h>                 // ESP8266 Filesystem FS.h library
-#include <MQTTClient.h>         // IDE MQTT library
-#include <ArduinoJson.h>        // ArduinoJson v6 library (not the Arduino_JSON which seems to have been abandoned)
-#include <ESP8266WiFi.h>        // 
+#include <PubSubClient.h>       // Nick O'leary's MQTT client
+#include <ArduinoJson.h>        // Arduino JSON ibrary
+#include <ESP8266WiFi.h>        // ESP8266 WiFi Library
+#include <time.h>               // Time library
 #include <OneWire.h>            // 
 #include <DallasTemperature.h>  // DallasTemperature Library for the DS18B20
 #include <Adafruit_NeoPixel.h>  // 
 
 //Include the Configration files - make sure you update this before compilation!
 #include "configuration.h"
-
+#include "ESP-functions.h"
 
 // Further vars
-bool gasLogLast = false;
-bool gasLogCurrent = false;
+bool gasLogLast = false;     // Used to store that last logged value of the gas pin
+bool gasLogCurrent = false;  // Used to compare the current version of the gap pin to the previous
 
+time_t now;                  // this are the seconds since Epoch (1970) - UTC
+tm tm;                       // the structure tm holds time information in a more convenient way
+
+bool unHandledMessage = false;  // Used to signal from the callback that there's an unhandled message
+String stringifiedTopic = "";
+String stringifiedPayload = "";
 
 // If using Neo Pixels, make sure the next non-comment line is correctly setup (it should be!)
 // Parameter 1 = number of pixels in strip
@@ -45,44 +51,27 @@ OneWire oneWire(ONE_WIRE_BUS);
 //Pass the oneWire reference to Dallas Temperature
 DallasTemperature sensors (&oneWire);
 
-//Define WiFi client and MQTT client
+//Define WiFi and MQTT clients
 WiFiClient wifiClient;
-MQTTClient client;
+PubSubClient client(wifiClient);
 
 /*
  * ************************************************* Setup *************************************************
  */
  
 void setup() {
+
+  // State what's enabled, if diags is true
   if (diags) {
     Serial.begin(9600);
     if (temperatureLogging) { Serial.println ("Temperature logging enabled"); }
     if (gasLogging) { Serial.println ("Gas Logging enabled"); }
     if (neoPixels) { Serial.println ("Neopixels enabled"); }
-    
     }
 
-// ////////////// experimental section will need tidying up...
-
-// mount the SPIFFS filesystem
-// bool success = SPIFFS.begin();
- 
-//  if(SPIFFS.begin()){
-//    Serial.println("File system mounted with success");  
-//  }else{
- //   Serial.println("Error mounting the file system");  
-//  }
-
-//write a file
-
-
-// read a file
-
-
-// ///////////////////////////
-
+  // Setup Temperature Sensor, if temperatureLogging is true
   if (temperatureLogging) {
-    // Switch on temperature sensor, if it's on an IO pin
+        // Switch on temperature sensor, if it's on an IO pin
     if (isTempSensorOnPin) {
       if (diags) { Serial.print ("Switching on Temperature Sensor on pin ");
                    Serial.println (tempSensorPowerPin);}
@@ -90,22 +79,45 @@ void setup() {
       digitalWrite(tempSensorPowerPin, HIGH);
     }
     //Start one wire bus
+    if (diags) { Serial.println ("Starting OneWire/Dallas Temperature Sensors "); }
     sensors.begin();
   }
 
+  // Setup Gas usage logging if gasLogging true
   if (gasLogging) {
+    if (diags) { Serial.print ("Configuring Gas Pulse Sensing on pin ");
+                 Serial.println (gasPin); }
     pinMode (gasPin, INPUT_PULLUP);
     gasLogCurrent=digitalRead (gasPin);
     gasLogLast=gasLogCurrent;
   }
   
+  // Setup Neopixels
   if (neoPixels) {
-    strip.begin();
-    strip.show(); // initialise all pixels to "off"
+    if (diags) { Serial.println ("Configuring NeoPixels: ");
+                 Serial.print ("NeoPixels on pin: ");
+                 Serial.println (neoPixelPin);
+                 Serial.print ("Number of pixels: ");
+                 Serial.println (numberOfNeoPixels);  }
+
+    if (diags) { Serial.print ("Starting Strip: "); }
+    if (strip.begin()) {
+      if (diags) { Serial.println ("Success"); }
+    } else {
+      if (diags) { Serial.println ("Failed"); }
+    }
+
+    // We'll just presume that if the strip started, it will actually work
+    strip.show();
   }
 
+  // Define MQTT server and port
+  // setup callback routine for arriving messages
+  client.setServer(mqttServer, 1883);
+  client.setCallback(callback);
+
+
   //Start WiFi and connect to network
-  client.begin(server,wifiClient);
   if (diags) {
     Serial.print("Connecting to ");
     Serial.println(ssid);  }
@@ -123,7 +135,7 @@ void setup() {
                   Serial.print (maxWiFiTries);
                   Serial.println (" seconds");
                   }
-      restartESP();
+      restartESP(diags);
     }
   }
 
@@ -131,13 +143,37 @@ void setup() {
     Serial.println("");
     Serial.println("WiFi connected");  
     Serial.println("IP address: ");
-    Serial.println(WiFi.localIP());}
-    
+    Serial.println(WiFi.localIP());
+    }
+
+
+  // Get NTP Server Setup
+  // ip_addr_t ntpServerName;
+  if (diags) { Serial.println ("NTP server set to "+ntpServerName); }
+
+  // Setup NTP & Initial Sync
+
+//  setupNTP(ntpServerName, 100000, diags);
+
+  configTime(0, 0, ntpServerName);
+
+  // Wait for time sync
+  if (diags) { Serial.print("Waiting for NTP Time Sync"); }
+
+  while ((now = time(nullptr)) < 100000) {
+    delay(500);
+    if (diags) { Serial.print("."); }
+  }
+  
+  if (diags) { Serial.printf("\nTime synced: %s", ctime(&now)); }
+
+
+////////////////////////////////////////////////////////////////////////////////////////////
   //Setup MQTT and connect to broker
   //Generate client name based on MAC address
   uint8_t mac[6];
   WiFi.macAddress(mac);
-  clientName += macToStr(mac);
+  mqttClientName += macToStr(mac);
 
   //Setup MQTT topic strings
   subscribeTopic += macToStr(mac);
@@ -150,27 +186,26 @@ void setup() {
 
   if (diags) {
     Serial.print("Connecting to ");
-    Serial.print(server);
+    Serial.print(mqttServer);
     Serial.print(" as ");
-    Serial.println(clientName);
+    Serial.println(mqttClientName);
   }
   
-  if (client.connect((char*) clientName.c_str())) {
+  if (client.connect((char*) mqttClientName.c_str())) {
     if (neoPixels) {
       if (diags) {
         Serial.println("Connected to MQTT broker");
         Serial.print("Subscribed to: ");
         Serial.println(subscribeTopic);
       }
-      client.subscribe(subscribeTopic);
+      client.subscribe((char*) subscribeTopic.c_str());
     }
-  }
-  else {
+  } else {
     if (diags) {
       Serial.println("MQTT connect failed");
       Serial.println("Will reset and try again...");
     }
-    restartESP();
+    restartESP(diags);
   }
 
   prevTime = 0;
@@ -182,7 +217,7 @@ void setup() {
  */
  
 void loop() {
-  static int counter = 0;
+  //static int counter = 0;
 
   if (temperatureLogging) {
     //If we've gone over the mS delay value for a new temperature sensor report...
@@ -207,11 +242,12 @@ void loop() {
       Serial.println ("Publishing to MQTT broker at "+temperatureTopic);
       Serial.println();
     }
-    client.publish(temperatureTopic, temperatureString);
+
+    client.publish((char*) temperatureTopic.c_str(), (char*) temperatureString.c_str());
   }
   }
   
-  //Free up some time for background tasks of the ESP8266
+  //Process MQTT messages
   client.loop();
 
   if (gasLogging) {
@@ -226,18 +262,31 @@ void loop() {
       // Report only HIGH going LOW (ie: sensor becoming activated)
       // If reporting whenever a state change, we'll report twice as 
       // many gas pulses as required.
-      if (gasLogCurrent==false){      
-        client.publish(gasTopic, "Gas Pulse!");
+      if (gasLogCurrent==false){
+        client.publish((char*) gasTopic.c_str(), "Gas Pulse!");
         if (diags) {Serial.println ("Logging gas pulse.");}
       }
     }
   }
 
+  //Process MQTT messages
+  client.loop();
+
+  // Handle NeoPixel updates if there's been a message callback
+  if (unHandledMessage) { 
+    messageReceived (stringifiedTopic, stringifiedPayload);
+    unHandledMessage=false;
+  }
+
+
+
 // End of all logging and NeoPixels etc, on to housekeeping
 
 // Go into power save before checking other reboot type functions, so we don't end up
 // in a loop burning battery, if we don't need to
+
   if (superPowerSave && temperatureLogging && !neoPixels && !gasLogging) {
+
   // If we're only logging temperature and super-power-save is enabled
   // hibernate the ESP8266 and restart when next log needs to be made
   
@@ -252,22 +301,17 @@ void loop() {
   ESP.deepSleep(superPowerSaveDuration*1000000, WAKE_RF_DEFAULT); // Sleep for superPowerSaveDuration seconds
   }
 
-//Free up some time for background tasks of the ESP8266
-  client.loop();
-
 // reset after a day to avoid memory leaks 
   if(millis()>resetPeriod){
     if (diags) {Serial.println ("Restarting after reset period reached");}
-    restartESP();
+    restartESP(diags);
   }
 
 // If we're not connected to the MQTT broker any more, restart to reconnect networking
   if(!client.connected()){
     if (diags) {Serial.println ("No longer connected to MQTT broker, restarting");}
-    restartESP();
+    restartESP(diags);
   }
-
-
   
 }
 
@@ -288,112 +332,119 @@ char *f2s(float f, int p){
   pBuff = sBuff[iCount];                // use this buffer
   if(iCount >= iSize -1){               // check for wrap
     iCount = 0;                         // if wrapping start again and reset
-  }
-  else{
+  } else {
     iCount++;                           // advance the counter
   }
   return dtostrf(f, 0, p, pBuff);       // call the library function
 }
 
-void messageReceived(String topic, String payload, char * bytes, unsigned int length) {
+// Process the received MQTT JSON message, deserialise and set the pixel index as per message
+void messageReceived(String topic, String payload) {
   //Only process recieved messages if we're controlling Neo Pixels
   if (neoPixels) {
-  int neoPixelRed = 0; // Store the value for the Red channel
-  int neoPixelGreen = 0; // Store the value for the Green channel
-  int neoPixelBlue = 0; // Store the value for the Blue channel.
-  int neoPixelDelay = 0; // The time in ms for swipe in.
+    int neoPixelIndex = 0; // Index of the pixel to update
+    int neoPixelRed = 0;   // Store the value for the Red channel
+    int neoPixelGreen = 0; // Store the value for the Green channel
+    int neoPixelBlue = 0;  // Store the value for the Blue channel
+
+    if (diags) {
+      Serial.print("MQTT Incoming: ");
+      Serial.print(topic);
+      Serial.println();
+      Serial.print ("MQTT Payload: ");
+      Serial.println(payload);
+      }
+
+    // Handle message processing
+    // JSON "{\"index\":255,\"red\":255,\"green\":255,\"blue\":255}"
+    // Parse the JSON message payload and convert to integers
+    JsonDocument doc;
+    if (deserializeJson(doc, payload)) {
+      neoPixelIndex = doc["index"]; // 0..numberOfNeoPixels
+      neoPixelRed = doc["red"];     // 0..254
+      neoPixelGreen = doc["green"]; // 0..254
+      neoPixelBlue = doc["blue"];   // 0..254
+
+      // Sanitise payload brightness is max 254 min 0
+      // Index is min 0 max numberOfNeoPixels
+      if (neoPixelIndex > numberOfNeoPixels) { neoPixelIndex=numberOfNeoPixels; }
+      if (neoPixelIndex < 0 )  { neoPixelIndex=0; }
+      if (neoPixelRed > 254)   { neoPixelRed=254; }
+      if (neoPixelRed < 0)     { neoPixelRed=0; }
+      if (neoPixelGreen > 254) { neoPixelGreen=254; }
+      if (neoPixelGreen < 0)   { neoPixelGreen=0; }
+      if (neoPixelBlue > 254)  { neoPixelBlue=254; }
+      if (neoPixelBlue < 0)    { neoPixelBlue=0; }
+
+      if (diags) {
+        Serial.print("Index : ");
+        Serial.println (neoPixelIndex);
+        Serial.print("Red : ");
+        Serial.println (neoPixelRed);
+        Serial.print("Green : ");
+        Serial.println (neoPixelGreen);
+        Serial.print("Blue : ");
+        Serial.println (neoPixelBlue);
+        }
+
+      //Set the neo Pixel
+      strip.setPixelColor(neoPixelIndex, neoPixelRed, neoPixelGreen, neoPixelBlue);
   
-  if (diags) {
-    Serial.print("incoming: ");
-    Serial.print(topic);
-    Serial.print(" - ");
-    Serial.print(payload);
-    Serial.println();
-    Serial.print ("MQTT Payload: ");
-    Serial.println(payload);
-  }
-
-  // Handle message processing here - format:
-  // "000 000 000 000" to "255 255 255 999" for Red, Green, Blue, Delay between each pixel
-  // Break up the message payload and convert to integers
-  neoPixelRed = payload.substring(0,3).toInt();
-  neoPixelGreen = payload.substring(4,7).toInt();
-  neoPixelBlue = payload.substring(8,11).toInt();
-  neoPixelDelay = payload.substring(12,15).toInt();
-
-  // Make sure the payload isn't greater than 255 or less than 0
-  if (neoPixelRed > 255) {neoPixelRed=255;};
-  if (neoPixelRed < 0) {neoPixelRed=0;};
-  if (neoPixelGreen > 255) {neoPixelGreen=255;};
-  if (neoPixelGreen < 0) {neoPixelGreen=0;};
-  if (neoPixelBlue > 255) {neoPixelBlue=255;};
-  if (neoPixelBlue < 0) {neoPixelBlue=0;};
-
-  // Make sure the speed isn't greater than 999 or less than 0
-  if (neoPixelDelay > 999) {neoPixelDelay=999;};
-  if (neoPixelDelay < 0) {neoPixelDelay=0;};
-
-  if (diags) {
-    Serial.print("Red : ");
-    Serial.println (neoPixelRed);
-    Serial.print("Green : ");
-    Serial.println (neoPixelGreen);
-    Serial.print("Blue : ");
-    Serial.println (neoPixelBlue);
-    Serial.print("Delay : ");
-    Serial.println (neoPixelDelay);
-  }
-
-  //Set the neo Pixels
-  colourWipe(strip.Color(neoPixelRed, neoPixelGreen, neoPixelBlue), neoPixelDelay);
-  
+    } else {
+    
+    //If the JSON didn't deserialise log the error in diags
+      if (diags) { Serial.println ("JSON Failed to deserialize."); }
+    
+    }
   }
 }
 
-
-// Fill the dots one after the other with a color
-void colourWipe(uint32_t c, uint8_t wait) {
-  for(uint16_t i=0; i<strip.numPixels(); i++) {
-    strip.setPixelColor(i, c);
-    strip.show();
-    delay(wait);
-  }
+// Show the time from NTP
+void showTime() {
+  time(&now);                       // read the current time
+  localtime_r(&now, &tm);           // update the structure tm with the current time
+  Serial.print("year:");
+  Serial.print(tm.tm_year + 1900);  // years since 1900
+  Serial.print("\tmonth:");
+  Serial.print(tm.tm_mon + 1);      // January = 0 (!)
+  Serial.print("\tday:");
+  Serial.print(tm.tm_mday);         // day of month
+  Serial.print("\thour:");
+  Serial.print(tm.tm_hour);         // hours since midnight  0-23
+  Serial.print("\tmin:");
+  Serial.print(tm.tm_min);          // minutes after the hour  0-59
+  Serial.print("\tsec:");
+  Serial.print(tm.tm_sec);          // seconds after the minute  0-61*
+  Serial.print("\twday");
+  Serial.print(tm.tm_wday);         // days since Sunday 0-6
+  if (tm.tm_isdst == 1)             // Daylight Saving Time flag
+    Serial.print("\tDST");
+  else
+    Serial.print("\tstandard");
+  Serial.println();
 }
 
-//Returns the MAC address as a string
-String macToStr(const uint8_t* mac)
-{
-  String result;
-  for (int i = 0; i < 6; ++i) {
-    result += String(mac[i], 16);
-    if (i < 5)
-      result += ':';
-  }
-  return result;
-}
+// Handle an MQTT message arrival
+// The callback should be as fast as possible, in case messages turn up
+// while the callback is being processed.
+void callback(char* topic, uint8_t* payload, size_t plength) {
+    if (diags) {
+      Serial.println ("Message arrived");
+      Serial.print ("Unprocessed data topic [");
+      Serial.print (topic);
+      Serial.println ("] ");
+    
+      Serial.print ("Unprocessed payload [");
+      for (size_t i = 0; i < plength; i++) {
+        Serial.print((char)payload[i]);
+      }
+      Serial.println();
+    }
 
+    // We want to spend the smallest amount of time possible in the callback
+    // So set a flag and strings to be dealt with in the loop()
+    stringifiedTopic = String(topic);
+    stringifiedPayload = String((char*)payload).substring(0, plength);
+    unHandledMessage = true;
 
-// Fill the dots one after the other with a color
-void restartESP() {
-  // Test to see if the ESP will reboot into "flash mode" for programming, if so it stays there, effectively dead until manually reset
-  // Flash mode is hardware GPIO0=LOW
-  // Loop round this until GPIO0=HIGH, as booting low results in non-functioning device
-
-  if (diags) {Serial.print ("Waiting for program pin (GPIO0) to go high, for safe reboot.");}
-
-  pinMode (0, INPUT_PULLUP);  // Explicitly define the pin as input, with pullup to high, in case it's used as an output elsewhere
-  while (!digitalRead(0)) {
-    delay (1000);
-    if (diags) {Serial.print (".");}
-  }
-  
-  if (diags) {
-    Serial.println("");
-    Serial.println("");
-    Serial.println("Restarting...");
-    Serial.println("");
-    Serial.println("");
-  }
-  
-  ESP.restart(); // Call the platform specific restart function for the ESP8266
 }

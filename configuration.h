@@ -4,11 +4,11 @@
 // NB: You can't use Gas logging and neo Pixels on an ESP01 module as there aren't enough IO lines
 
 //WiFi variables - currently hard coded!
-const char* ssid = "SSID NAME";
-const char* password = "SSID PASSWORD";
+const char* ssid = "SSID";
+const char* password = "PASSWORD";
 
 //Enable/disable features
-const bool temperatureLogging = true; // Set true/false for tempearture logging / no logging
+const bool temperatureLogging = false; // Set true/false for tempearture logging / no logging
 const bool gasLogging = false; // Set true/false for gas pulse logging
 const bool neoPixels = true; //  Set true/false for neoPixel lights
 const bool superPowerSave = false; // Enable to put into deep sleep mode
@@ -18,17 +18,19 @@ const bool diags = true; // Energy saving in the battery version of the temperat
 
 //Other variables
 const int superPowerSaveDuration = 600; // Seconds to remain in power save mode before restarting
-const int numberOfNeoPixels = 16; // The number of neoPixels we're controlling
+const int numberOfNeoPixels = 5; // The number of neoPixels we're controlling
 const bool isTempSensorOnPin = false; // true if the temperature sensor isn't hard wired to Vcc
 const int tempSensorPowerPin = 4; // The pin the power supply of the temperature sensor is connected to
 
-//WiFi / MQTT Settings
-const int maxWiFiTries = 30; // Maximum wait (in seconds) for WiFi to connect, before resetting to try again
-String subscribeTopic = "/devices/"; // subscribe to this topic; anything sent here will be passed into the messageReceived function (will have MAC address and "command" appended
-String temperatureTopic = "/devices/"; //topic to publish temperatures readings to, will have MAC address and "temperature" appended
-String gasTopic = "/devices/"; //topic to publish gas readings to, will have MAC address and "gas" appended
-const char* server = "10.1.10.23"; // IP or URL of MQTT broker
-String clientName = "ESP8266-"; // just a name used to talk to MQTT broker, MAC will be appended for uniqueness
+//WiFi / MQTT / NTP Settings
+const int maxWiFiTries = 30;                          // Maximum wait (in seconds) for WiFi to connect, before resetting to try again
+String subscribeTopic = "/devices/";                  // subscribe to this topic; anything sent here will be passed into the messageReceived function (will have MAC address and "command" appended
+String temperatureTopic = "/devices/";                //topic to publish temperatures readings to, will have MAC address and "temperature" appended
+String gasTopic = "/devices/";                        //topic to publish gas readings to, will have MAC address and "gas" appended
+const char* mqttServer = "frinkmqtt.frinkiac7.net";   // IP or URL of MQTT broker
+const int mqttPort = 1880;                            // Port that the MQTT broker listens on
+String mqttClientName = "ESP8266-";                   // just a name used to talk to MQTT broker, MAC will be appended for uniqueness
+String ntpServerName = "frinksrv16.frinkiac7.net";    // A local network windows NTP Server
 
 //Configure GPIO Connection Pins
 //NB: On an ESP-01 module, the 2nd pin from the left on the top row is 2, the 3rd is 0
