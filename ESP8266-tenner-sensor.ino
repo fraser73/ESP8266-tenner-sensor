@@ -119,7 +119,7 @@ void setup() {
 
   //Start WiFi and connect to network
   if (diags) {
-    Serial.print("Connecting to ");
+    Serial.print("Connecting to SSID: ");
     Serial.println(ssid);  }
 
   WiFi.mode(WIFI_STA);
@@ -149,23 +149,23 @@ void setup() {
 
   // Get NTP Server Setup
   // ip_addr_t ntpServerName;
-  if (diags) { Serial.println ("NTP server set to "+ntpServerName); }
+  //if (diags) { Serial.println ("NTP server set to "+ntpServerName); }
 
   // Setup NTP & Initial Sync
 
 //  setupNTP(ntpServerName, 100000, diags);
 
-  configTime(0, 0, ntpServerName);
+//  configTime(0, 0, ntpServerName);
 
   // Wait for time sync
-  if (diags) { Serial.print("Waiting for NTP Time Sync"); }
+//  if (diags) { Serial.print("Waiting for NTP Time Sync"); }
 
-  while ((now = time(nullptr)) < 100000) {
-    delay(500);
-    if (diags) { Serial.print("."); }
-  }
+//  while ((now = time(nullptr)) < 100000) {
+//    delay(500);
+//    if (diags) { Serial.print("."); }
+//  }
   
-  if (diags) { Serial.printf("\nTime synced: %s", ctime(&now)); }
+//  if (diags) { Serial.printf("\nTime synced: %s", ctime(&now)); }
 
 
 ////////////////////////////////////////////////////////////////////////////////////////////
@@ -176,29 +176,53 @@ void setup() {
   mqttClientName += macToStr(mac);
 
   //Setup MQTT topic strings
-  subscribeTopic += macToStr(mac);
-  subscribeTopic += ("/command");
-  temperatureTopic += macToStr(mac);
-  temperatureTopic += ("/temperature");
-  gasTopic += macToStr(mac);
-  gasTopic += ("/gas");
+  subscribeTopic += mqttClientName;
+  subscribeTopic += ("/pixelStrip/command");
 
+  pixelStripTopic +=  mqttClientName;
+  pixelStripTopic +=  ("/pixelStrip");
+
+  temperatureTopic += mqttClientName;
+  temperatureTopic += ("/temperature");
+  
+  gasTopic += mqttClientName;
+  gasTopic += ("/gas");
+  
+  statusTopic += mqttClientName;
+  statusTopic += ("/status");
 
   if (diags) {
-    Serial.print("Connecting to ");
-    Serial.print(mqttServer);
-    Serial.print(" as ");
+    Serial.print("Connecting to MQTT Broker at: ");
+    Serial.println(mqttServer);
+    Serial.print("Connecting to MQTT Broker as: ");
     Serial.println(mqttClientName);
   }
   
   if (client.connect((char*) mqttClientName.c_str())) {
+    if (diags) { Serial.println("Connected to MQTT broker"); 
+                 Serial.print ("Posting awake message in: ");
+                 Serial.println (statusTopic); }
+    client.publish((char*) statusTopic.c_str(), "I'm Awake!");
+        
     if (neoPixels) {
       if (diags) {
-        Serial.println("Connected to MQTT broker");
-        Serial.print("Subscribed to: ");
+        Serial.print("Subscribing to topic: ");
         Serial.println(subscribeTopic);
+        Serial.println();
       }
       client.subscribe((char*) subscribeTopic.c_str());
+
+      if (diags) {
+        Serial.print("Posting strip details to: ");
+        Serial.println(pixelStripTopic);
+        Serial.println();
+      }
+      String topicTemp = pixelStripTopic;
+      topicTemp += ("/numberOfPixels");
+      
+      // Temporarily make a string that can hold the chars of integer numberOfNeoPixels
+      String messageTemp = String(numberOfNeoPixels);
+      client.publish((char*) topicTemp.c_str(),(char*) messageTemp.c_str());
     }
   } else {
     if (diags) {
@@ -247,6 +271,7 @@ void loop() {
   }
   }
   
+
   //Process MQTT messages
   client.loop();
 
